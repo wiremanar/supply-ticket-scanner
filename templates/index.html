@@ -387,7 +387,7 @@
                 <p>Tap to upload or take photos of your ticket</p>
                 <p class="hint">Supports photos, PDFs, and multiple pages — upload all at once</p>
             </div>
-            <input type="file" id="fileInput" accept="image/*,.pdf,application/pdf" multiple capture="environment">
+            <input type="file" id="fileInput" accept="image/*,.pdf,application/pdf" multiple>
             <div class="thumbnails" id="thumbnails"></div>
         </div>
 
@@ -520,7 +520,8 @@
 
         function addFiles(files) {
             for (const file of files) {
-                if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+                const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                if (file.type.startsWith('image/') || isPdf) {
                     selectedFiles.push(file);
                 }
             }
