@@ -10,15 +10,30 @@ load_dotenv()
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max upload
 
-EXTRACTION_PROMPT = """You are an expert at reading electrical supply house tickets/invoices.
+EXTRACTION_PROMPT = """You are an expert at reading electrical supply house tickets and invoices.
 
 Look at this supply house ticket image and extract ALL line items and header information.
+
+CRITICAL RULES FOR LINE ITEM SEPARATION:
+- Each row that has its OWN AMOUNT (dollar value) in the rightmost column is a SEPARATE line item
+- NEVER combine two rows that each have their own AMOUNT into one line item
+- Items with different U/M (unit of measure) like EA vs M are ALWAYS separate items
+- Multi-line descriptions (where a second line has NO amount) belong to the item above them
+- The ORDERED column (leftmost) shows the quantity — use this for qty
+- If there is a SHIPPED column with a value, use SHIPPED instead of ORDERED
+- Read the UNIT PRICE and AMOUNT columns carefully — they are separate columns
+
+HOW TO IDENTIFY SEPARATE LINE ITEMS:
+1. Look at the AMOUNT column (rightmost dollar column)
+2. Every row that has a number in the AMOUNT column = one separate line item
+3. Rows between amount rows that have NO amount = continuation of the description above
+4. Example: "BLI B2211-1-1/4PAZN" with amount 209.64 is ONE item, then "WIR 14 THHN STR BLK @ 500" with amount 106.40 is a DIFFERENT item
 
 Return ONLY valid JSON in this exact format (no markdown, no explanation):
 {
   "header": {
     "supplier": "supplier name if visible",
-    "shipping_number": "shipping/invoice number",
+    "shipping_number": "shipping/invoice/quote number",
     "customer": "customer name",
     "order_date": "order date",
     "date": "ticket date",
@@ -26,27 +41,33 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
   },
   "line_items": [
     {
-      "qty": 500,
-      "description": "WIR 6 THHN STR GRN @ 500",
+      "qty": 100,
+      "description": "BLI B2211-1-1/4PAZN 1-1/4 EMT/RIG STRUT STRAP",
+      "unit_of_measure": "EA",
+      "unit_price": 2.0964,
+      "amount": 209.64
+    },
+    {
+      "qty": 1000,
+      "description": "WIR 14 THHN STR BLK @ 500 14GA STR-BLACK @ 500 FT SPOOL",
       "unit_of_measure": "M",
-      "unit_price": 928.3078,
-      "amount": 454.15
+      "unit_price": 106.4000,
+      "amount": 106.40
     }
   ],
   "totals": {
-    "subtotal": 13445.10,
-    "tax": 1142.83,
-    "total": 14587.93
+    "subtotal": 0,
+    "tax": 0,
+    "total": 0
   }
 }
 
-Rules:
-- Use the SHIPPED quantity (not ordered quantity) for qty
-- Include ALL line items, even partial ones
-- Use the exact description text from the ticket
-- Prices should be numbers, not strings
-- If a value is unclear, use your best reading and flag with a note
-- For multi-line descriptions, combine into one description string
+Additional rules:
+- Include ALL line items — do not skip any
+- Prices and amounts should be numbers, not strings
+- Read part numbers carefully: B2211 not R2711, B2408 not R2408, etc.
+- If a description spans multiple lines but has only ONE amount, combine into one description
+- If quantity is unclear, check if ORDERED and SHIPPED columns differ
 - Return ONLY the JSON, nothing else"""
 
 
