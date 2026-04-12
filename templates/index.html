@@ -399,6 +399,16 @@
                     <label>Job Name / Address</label>
                     <input type="text" id="jobName" placeholder="e.g., Smith Residence - 123 Main St">
                 </div>
+                <div class="field">
+                    <label>Client (for Invoice Ninja)</label>
+                    <div style="display:flex; gap:6px;">
+                        <select id="clientSelect" style="padding:10px 12px; border:1px solid #d0d5dd; border-radius:8px; font-size:15px; flex:1;">
+                            <option value="">-- Select Client --</option>
+                            <option value="__new__">+ Add New Client</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline" onclick="loadClients()" title="Refresh client list" style="padding:8px 10px;">&#x21bb;</button>
+                    </div>
+                </div>
                 <div class="field" style="max-width: 140px;">
                     <label>Default Markup %</label>
                     <input type="number" id="defaultMarkup" value="25" min="0" max="200" step="1">
@@ -515,6 +525,70 @@
             document.getElementById('defaultMarkup').value = savedMarkup;
             document.getElementById('settingsMarkup').value = savedMarkup;
         }
+
+        // Load client list from Invoice Ninja
+        async function loadClients() {
+            try {
+                const resp = await fetch('/get-clients');
+                const data = await resp.json();
+                if (data.clients) {
+                    const select = document.getElementById('clientSelect');
+                    const currentVal = select.value;
+                    select.innerHTML = '<option value="">-- Select Client --</option><option value="__new__">+ Add New Client</option>';
+                    data.clients.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.id;
+                        opt.textContent = c.name + (c.city ? ` (${c.city})` : '');
+                        select.appendChild(opt);
+                    });
+                    // Restore selection if it still exists
+                    if (currentVal) select.value = currentVal;
+                    showToast('Client list refreshed!');
+                }
+            } catch (e) {
+                console.log('Could not load clients:', e);
+            }
+        }
+        loadClients();
+
+        // Handle "Add New Client" selection
+        document.getElementById('clientSelect').addEventListener('change', async function() {
+            if (this.value === '__new__') {
+                const name = prompt('Enter new client name:');
+                if (!name || !name.trim()) {
+                    this.value = '';
+                    return;
+                }
+
+                const ninjaToken = localStorage.getItem('ninjaToken');
+                const ninjaUrl = localStorage.getItem('ninjaUrl') || 'http://localhost:8080';
+
+                try {
+                    const resp = await fetch('/create-client', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ninja_url: ninjaUrl,
+                            ninja_token: ninjaToken,
+                            name: name.trim()
+                        })
+                    });
+                    const result = await resp.json();
+                    if (result.success) {
+                        // Reload client list and select the new one
+                        await loadClients();
+                        this.value = result.client_id;
+                        showToast(`Client "${name.trim()}" created!`);
+                    } else {
+                        showToast(result.error || 'Failed to create client', '#e74c3c');
+                        this.value = '';
+                    }
+                } catch (e) {
+                    showToast('Error creating client: ' + e.message, '#e74c3c');
+                    this.value = '';
+                }
+            }
+        });
 
         // File handling
         const uploadZone = document.getElementById('uploadZone');
@@ -913,18 +987,27 @@
 
             const lineItems = [];
             rows.forEach(row => {
-                const qty = row.querySelector('[data-field="qty"]').value;
+                const qty = parseFloat(row.querySelector('[data-field="qty"]').value) || 1;
                 const desc = row.querySelector('[data-field="desc"]').value;
-                const custPrice = row.querySelector('[data-calc="custprice"]').textContent.replace('$', '').replace(',', '');
+                const lineCost = parseFloat(row.querySelector('[data-field="cost"]').value) || 0;
+                const markup = parseFloat(row.querySelector('[data-field="markup"]').value) || 0;
                 lineItems.push({
-                    qty: parseFloat(qty) || 1,
+                    qty: qty,
                     description: desc,
-                    customer_price: parseFloat(custPrice) || 0
+                    line_cost: lineCost,
+                    markup: markup
                 });
             });
 
             const jobName = document.getElementById('jobName').value || 'Untitled Job';
-            const customerName = extractedData?.header?.customer || '';
+            const clientId = document.getElementById('clientSelect').value;
+
+            if (!clientId) {
+                showToast('Please select a client from the dropdown first', '#e74c3c');
+                ninjaBtn.disabled = false;
+                ninjaBtn.textContent = 'Send to Invoice Ninja';
+                return;
+            }
 
             try {
                 const resp = await fetch('/create-invoice', {
@@ -935,7 +1018,7 @@
                         ninja_token: ninjaToken,
                         line_items: lineItems,
                         job_name: jobName,
-                        customer_name: customerName
+                        client_id: clientId
                     })
                 });
 

@@ -6,6 +6,7 @@ from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 import anthropic
 import fitz  # PyMuPDF - for PDF support
+import requests as http_requests  # renamed to avoid conflict with flask.request
 
 load_dotenv()
 
@@ -254,11 +255,91 @@ def save_ninja_settings():
     return jsonify({'success': True})
 
 
+@app.route('/get-clients', methods=['GET'])
+def get_clients():
+    """Fetch client list from Invoice Ninja for the dropdown."""
+    ninja_url = request.args.get('ninja_url') or os.environ.get('NINJA_URL', 'http://localhost:8080')
+    ninja_token = request.args.get('ninja_token') or os.environ.get('NINJA_TOKEN', '')
+
+    if not ninja_token:
+        return jsonify({'error': 'No Invoice Ninja API token configured.'}), 400
+
+    headers = {
+        'X-Api-Token': ninja_token,
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+
+    try:
+        all_clients = []
+        page = 1
+        while True:
+            resp = http_requests.get(
+                f'{ninja_url}/api/v1/clients?per_page=100&page={page}',
+                headers=headers, timeout=10
+            )
+            if resp.status_code != 200:
+                break
+            data = resp.json()
+            clients = data.get('data', [])
+            if not clients:
+                break
+            for c in clients:
+                all_clients.append({
+                    'id': c['id'],
+                    'name': c.get('name', ''),
+                    'city': c.get('city', ''),
+                })
+            # Check if there are more pages
+            meta = data.get('meta', {}).get('pagination', {})
+            if page >= meta.get('total_pages', 1):
+                break
+            page += 1
+
+        all_clients.sort(key=lambda x: x['name'].lower())
+        return jsonify({'clients': all_clients})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/create-client', methods=['POST'])
+def create_client():
+    """Create a new client in Invoice Ninja."""
+    data = request.get_json()
+    ninja_url = data.get('ninja_url') or os.environ.get('NINJA_URL', 'http://localhost:8080')
+    ninja_token = data.get('ninja_token') or os.environ.get('NINJA_TOKEN', '')
+    name = data.get('name', '').strip()
+
+    if not ninja_token:
+        return jsonify({'error': 'No Invoice Ninja API token configured.'}), 400
+    if not name:
+        return jsonify({'error': 'Client name is required.'}), 400
+
+    headers = {
+        'X-Api-Token': ninja_token,
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+
+    try:
+        resp = http_requests.post(
+            f'{ninja_url}/api/v1/clients',
+            json={'name': name},
+            headers=headers,
+            timeout=10
+        )
+        if resp.status_code in [200, 201]:
+            client_id = resp.json().get('data', {}).get('id')
+            return jsonify({'success': True, 'client_id': client_id})
+        else:
+            return jsonify({'error': f'Failed: {resp.text[:200]}'}), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/create-invoice', methods=['POST'])
 def create_invoice():
     """Create a draft invoice in Invoice Ninja with extracted line items."""
-    import requests as http_requests
-
     data = request.get_json()
     ninja_url = data.get('ninja_url') or os.environ.get('NINJA_URL', 'http://localhost:8080')
     ninja_token = data.get('ninja_token') or os.environ.get('NINJA_TOKEN', '')
@@ -268,26 +349,39 @@ def create_invoice():
 
     line_items = data.get('line_items', [])
     job_name = data.get('job_name', 'Untitled Job')
-    customer_name = data.get('customer_name', '')
+    client_id = data.get('client_id', '')
+
+    if not client_id:
+        return jsonify({'error': 'Please select a client from the dropdown before sending.'}), 400
 
     # Build Invoice Ninja line items
     ninja_items = []
     for item in line_items:
+        qty = float(item.get('qty', 1)) or 1
+        line_cost = float(item.get('line_cost', 0))
+        markup_pct = float(item.get('markup', 0))
+        marked_up_total = line_cost * (1 + markup_pct / 100)
+        desc = item.get('description', '')
+        item_name = desc.split('@')[0].split('14GA')[0].split('12GA')[0].strip()
+        if len(item_name) > 40:
+            item_name = item_name[:40].strip()
         ninja_items.append({
-            'product_key': '',
-            'notes': item.get('description', ''),
-            'quantity': float(item.get('qty', 1)),
-            'cost': float(item.get('customer_price', 0)),
+            'product_key': item_name,
+            'notes': f"Qty: {int(qty)} - {desc}",
+            'quantity': 1,
+            'cost': round(marked_up_total, 2),
         })
 
-    # Create the invoice
+    # API headers
     headers = {
         'X-Api-Token': ninja_token,
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
     }
 
+    # Create the invoice
     invoice_data = {
+        'client_id': client_id,
         'line_items': ninja_items,
         'public_notes': f'Job: {job_name}',
         'private_notes': f'Source: Supply ticket scanner\nCustomer: {customer_name}',
