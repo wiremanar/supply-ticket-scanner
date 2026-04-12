@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supply Ticket Scanner</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f2f5;
+            color: #1a1a1a;
+            padding: 16px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        /* Header */
+        .app-header {
+            background: linear-gradient(135deg, #1e3a5f, #2d5a8e);
+            color: white;
+            padding: 20px 24px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .app-header h1 { font-size: 22px; font-weight: 700; }
+        .app-header p { opacity: 0.85; font-size: 14px; margin-top: 4px; }
+        .settings-btn {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .settings-btn:hover { background: rgba(255,255,255,0.25); }
+
+        /* Cards */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .card h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #1e3a5f;
+        }
+
+        /* Upload Area */
+        .upload-zone {
+            border: 2px dashed #c0c8d4;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f8fafc;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #2d5a8e;
+            background: #eef3f9;
+        }
+        .upload-zone svg { margin-bottom: 12px; }
+        .upload-zone p { color: #666; font-size: 15px; }
+        .upload-zone .hint { font-size: 13px; color: #999; margin-top: 6px; }
+        #fileInput { display: none; }
+
+        /* Thumbnails */
+        .thumbnails {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .thumb-wrapper {
+            position: relative;
+            width: 80px;
+            height: 100px;
+        }
+        .thumb-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        .thumb-remove {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 22px;
+            height: 22px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 22px;
+        }
+
+        /* Job & Markup Row */
+        .controls-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+        .field { flex: 1; min-width: 200px; }
+        .field label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 4px;
+        }
+        .field input, .field select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d0d5dd;
+            border-radius: 8px;
+            font-size: 15px;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #2d5a8e;
+            color: white;
+        }
+        .btn-primary:hover { background: #1e3a5f; }
+        .btn-primary:disabled {
+            background: #a0b4cc;
+            cursor: not-allowed;
+        }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-success:hover { background: #1e8449; }
+        .btn-outline {
+            background: white;
+            color: #2d5a8e;
+            border: 1px solid #2d5a8e;
+        }
+        .btn-outline:hover { background: #eef3f9; }
+        .btn-sm { padding: 8px 14px; font-size: 13px; }
+
+        /* Processing */
+        .processing {
+            text-align: center;
+            padding: 40px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #2d5a8e;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Results Table */
+        .results-table-wrapper { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th {
+            background: #1e3a5f;
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        td {
+            padding: 8px;
+            border-bottom: 1px solid #e8eaed;
+        }
+        tr:nth-child(even) { background: #f8fafc; }
+        tr:hover { background: #eef3f9; }
+        td input {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            font-size: 14px;
+            background: transparent;
+        }
+        td input:focus {
+            border-color: #2d5a8e;
+            background: white;
+            outline: none;
+        }
+        td input.num { text-align: right; }
+        .calc-cell {
+            text-align: right;
+            font-weight: 500;
+            color: #27ae60;
+        }
+        .cost-cell { text-align: right; }
+        .totals-row {
+            background: #1e3a5f !important;
+            color: white;
+            font-weight: 700;
+        }
+        .totals-row td { border: none; padding: 12px 8px; }
+
+        /* Header Info */
+        .ticket-header {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 8px;
+            padding: 12px;
+            background: #f0f4f8;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        .ticket-header span { color: #666; }
+        .ticket-header strong { color: #1a1a1a; }
+
+        /* Action Bar */
+        .action-bar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #27ae60;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            transform: translateY(80px);
+            transition: transform 0.3s;
+            z-index: 999;
+        }
+        .toast.show { transform: translateY(0); }
+
+        /* Settings Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 480px;
+        }
+        .modal h2 { margin-bottom: 16px; }
+        .modal .field { margin-bottom: 14px; min-width: unset; }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        /* Error */
+        .error-msg {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 12px;
+        }
+
+        /* Delete row button */
+        .delete-row {
+            background: none;
+            border: none;
+            color: #ccc;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+        }
+        .delete-row:hover { color: #e74c3c; }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            body { padding: 8px; }
+            .app-header { padding: 16px; }
+            .app-header h1 { font-size: 18px; }
+            .upload-zone { padding: 24px 16px; }
+            .controls-row { flex-direction: column; }
+            .field { min-width: unset; }
+            th, td { padding: 6px 4px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="app-header">
+            <div>
+                <h1>Supply Ticket Scanner</h1>
+                <p>Upload ticket photos — get line items extracted automatically</p>
+            </div>
+            <button class="settings-btn" onclick="openSettings()">Settings</button>
+        </div>
+
+        <!-- Upload Card -->
+        <div class="card">
+            <h2>1. Upload Ticket Photos</h2>
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2d5a8e" stroke-width="1.5">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                </svg>
+                <p>Tap to upload or take photos of your ticket</p>
+                <p class="hint">Supports multiple pages — upload all pages at once</p>
+            </div>
+            <input type="file" id="fileInput" accept="image/*" multiple capture="environment">
+            <div class="thumbnails" id="thumbnails"></div>
+        </div>
+
+        <!-- Job & Settings -->
+        <div class="card">
+            <h2>2. Job Details</h2>
+            <div class="controls-row">
+                <div class="field">
+                    <label>Job Name / Address</label>
+                    <input type="text" id="jobName" placeholder="e.g., Smith Residence - 123 Main St">
+                </div>
+                <div class="field" style="max-width: 140px;">
+                    <label>Default Markup %</label>
+                    <input type="number" id="defaultMarkup" value="25" min="0" max="200" step="1">
+                </div>
+                <button class="btn btn-primary" id="scanBtn" onclick="scanTickets()" disabled>
+                    Scan Ticket
+                </button>
+            </div>
+        </div>
+
+        <!-- Processing Indicator -->
+        <div class="card" id="processingCard" style="display:none;">
+            <div class="processing">
+                <div class="spinner"></div>
+                <p id="processingText">Reading ticket with AI...</p>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div class="card" id="resultsCard" style="display:none;">
+            <h2>3. Extracted Line Items</h2>
+
+            <div class="ticket-header" id="ticketHeader"></div>
+
+            <div class="results-table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:30px;"></th>
+                            <th style="width:60px;">Qty</th>
+                            <th>Description</th>
+                            <th style="width:50px;">U/M</th>
+                            <th style="width:100px;">Your Cost</th>
+                            <th style="width:80px;">Markup %</th>
+                            <th style="width:110px;">Customer Price</th>
+                            <th style="width:110px;">Line Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody"></tbody>
+                    <tfoot id="resultsFoot"></tfoot>
+                </table>
+            </div>
+
+            <div id="errorMessages"></div>
+
+            <div class="action-bar">
+                <button class="btn btn-success" onclick="copyForJoist()">Copy for Joist</button>
+                <button class="btn btn-outline" onclick="downloadCSV()">Download CSV</button>
+                <button class="btn btn-outline" onclick="clearAll()">Clear & Start Over</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <h2>Settings</h2>
+            <div class="field">
+                <label>Anthropic API Key</label>
+                <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
+                <p style="font-size:12px; color:#888; margin-top:4px;">
+                    Get your key at <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>.
+                    Your key is saved locally and never shared.
+                </p>
+            </div>
+            <div class="field">
+                <label>Default Markup %</label>
+                <input type="number" id="settingsMarkup" value="25" min="0" max="200">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeSettings()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // State
+        let selectedFiles = [];
+        let extractedData = null;
+
+        // Load saved settings
+        const savedMarkup = localStorage.getItem('defaultMarkup');
+        if (savedMarkup) {
+            document.getElementById('defaultMarkup').value = savedMarkup;
+            document.getElementById('settingsMarkup').value = savedMarkup;
+        }
+
+        // File handling
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            addFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', (e) => {
+            addFiles(e.target.files);
+        });
+
+        function addFiles(files) {
+            for (const file of files) {
+                if (file.type.startsWith('image/')) {
+                    selectedFiles.push(file);
+                }
+            }
+            renderThumbnails();
+            document.getElementById('scanBtn').disabled = selectedFiles.length === 0;
+        }
+
+        function renderThumbnails() {
+            const container = document.getElementById('thumbnails');
+            container.innerHTML = '';
+            selectedFiles.forEach((file, idx) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'thumb-wrapper';
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                const btn = document.createElement('button');
+                btn.className = 'thumb-remove';
+                btn.textContent = 'x';
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    selectedFiles.splice(idx, 1);
+                    renderThumbnails();
+                    document.getElementById('scanBtn').disabled = selectedFiles.length === 0;
+                };
+                wrapper.appendChild(img);
+                wrapper.appendChild(btn);
+                container.appendChild(wrapper);
+            });
+        }
+
+        // Scan tickets
+        async function scanTickets() {
+            const apiKey = localStorage.getItem('apiKey');
+            if (!apiKey) {
+                openSettings();
+                showToast('Please enter your API key first', '#e74c3c');
+                return;
+            }
+
+            const scanBtn = document.getElementById('scanBtn');
+            scanBtn.disabled = true;
+            document.getElementById('processingCard').style.display = 'block';
+            document.getElementById('resultsCard').style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('api_key', apiKey);
+            selectedFiles.forEach(file => formData.append('images', file));
+
+            try {
+                const totalPages = selectedFiles.length;
+                const procText = document.getElementById('processingText');
+                procText.textContent = `Reading ${totalPages} page${totalPages > 1 ? 's' : ''} with AI...`;
+
+                const response = await fetch('/extract', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Extraction failed');
+                }
+
+                extractedData = data;
+                renderResults(data);
+                document.getElementById('processingCard').style.display = 'none';
+                document.getElementById('resultsCard').style.display = 'block';
+
+            } catch (err) {
+                document.getElementById('processingCard').style.display = 'none';
+                showToast(err.message, '#e74c3c');
+            }
+            scanBtn.disabled = false;
+        }
+
+        // Render results
+        function renderResults(data) {
+            // Header info
+            const headerDiv = document.getElementById('ticketHeader');
+            const h = data.header || {};
+            headerDiv.innerHTML = `
+                <div><span>Customer:</span> <strong>${h.customer || '-'}</strong></div>
+                <div><span>Date:</span> <strong>${h.date || h.order_date || '-'}</strong></div>
+                <div><span>Ticket #:</span> <strong>${h.shipping_number || '-'}</strong></div>
+                <div><span>Pages:</span> <strong>${data.pages_processed}</strong></div>
+            `;
+
+            // Line items
+            const tbody = document.getElementById('resultsBody');
+            const defaultMk = parseFloat(document.getElementById('defaultMarkup').value) || 25;
+            tbody.innerHTML = '';
+
+            (data.line_items || []).forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                const cost = parseFloat(item.amount) || 0;
+                const custPrice = cost * (1 + defaultMk / 100);
+
+                tr.innerHTML = `
+                    <td><button class="delete-row" onclick="deleteRow(${idx})" title="Remove">&times;</button></td>
+                    <td><input type="number" class="num" value="${item.qty || ''}" onchange="recalcRow(this)" data-field="qty"></td>
+                    <td><input type="text" value="${escapeHtml(item.description || '')}" data-field="desc"></td>
+                    <td><input type="text" value="${item.unit_of_measure || ''}" style="width:40px;" data-field="uom"></td>
+                    <td class="cost-cell"><input type="number" class="num" value="${cost.toFixed(2)}" step="0.01" onchange="recalcRow(this)" data-field="cost"></td>
+                    <td><input type="number" class="num" value="${defaultMk}" step="1" onchange="recalcRow(this)" data-field="markup"></td>
+                    <td class="calc-cell" data-calc="custprice">$${custPrice.toFixed(2)}</td>
+                    <td class="calc-cell" data-calc="linetotal">$${custPrice.toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            updateTotals();
+
+            // Show errors if any
+            const errDiv = document.getElementById('errorMessages');
+            if (data.errors && data.errors.length > 0) {
+                errDiv.innerHTML = data.errors.map(e => `<div class="error-msg">${e}</div>`).join('');
+            } else {
+                errDiv.innerHTML = '';
+            }
+        }
+
+        function recalcRow(input) {
+            const tr = input.closest('tr');
+            const cost = parseFloat(tr.querySelector('[data-field="cost"]').value) || 0;
+            const markup = parseFloat(tr.querySelector('[data-field="markup"]').value) || 0;
+            const custPrice = cost * (1 + markup / 100);
+
+            tr.querySelector('[data-calc="custprice"]').textContent = '$' + custPrice.toFixed(2);
+            tr.querySelector('[data-calc="linetotal"]').textContent = '$' + custPrice.toFixed(2);
+            updateTotals();
+        }
+
+        function updateTotals() {
+            const rows = document.querySelectorAll('#resultsBody tr');
+            let totalCost = 0;
+            let totalCustomer = 0;
+
+            rows.forEach(row => {
+                const cost = parseFloat(row.querySelector('[data-field="cost"]')?.value) || 0;
+                const markup = parseFloat(row.querySelector('[data-field="markup"]')?.value) || 0;
+                totalCost += cost;
+                totalCustomer += cost * (1 + markup / 100);
+            });
+
+            const tfoot = document.getElementById('resultsFoot');
+            tfoot.innerHTML = `
+                <tr class="totals-row">
+                    <td colspan="4">TOTALS (${rows.length} items)</td>
+                    <td style="text-align:right;">$${totalCost.toFixed(2)}</td>
+                    <td></td>
+                    <td style="text-align:right;">$${totalCustomer.toFixed(2)}</td>
+                    <td style="text-align:right;">$${totalCustomer.toFixed(2)}</td>
+                </tr>
+            `;
+        }
+
+        function deleteRow(idx) {
+            const rows = document.querySelectorAll('#resultsBody tr');
+            if (rows[idx]) {
+                rows[idx].remove();
+                // Re-index delete buttons
+                document.querySelectorAll('#resultsBody tr').forEach((row, i) => {
+                    row.querySelector('.delete-row').setAttribute('onclick', `deleteRow(${i})`);
+                });
+                updateTotals();
+            }
+        }
+
+        // Copy for Joist
+        function copyForJoist() {
+            const rows = document.querySelectorAll('#resultsBody tr');
+            const jobName = document.getElementById('jobName').value || 'Unassigned';
+            let text = `Job: ${jobName}\n`;
+            text += '-'.repeat(60) + '\n';
+
+            rows.forEach(row => {
+                const qty = row.querySelector('[data-field="qty"]').value;
+                const desc = row.querySelector('[data-field="desc"]').value;
+                const custPriceText = row.querySelector('[data-calc="custprice"]').textContent;
+                text += `${qty}x  ${desc}  —  ${custPriceText}\n`;
+            });
+
+            const totalText = document.querySelector('#resultsFoot .totals-row td:last-child')?.textContent || '';
+            text += '-'.repeat(60) + '\n';
+            text += `TOTAL: ${totalText}\n`;
+
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Copied to clipboard! Paste into Joist.');
+            }).catch(() => {
+                // Fallback
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Copied to clipboard!');
+            });
+        }
+
+        // Download CSV
+        function downloadCSV() {
+            const rows = document.querySelectorAll('#resultsBody tr');
+            const jobName = document.getElementById('jobName').value || 'ticket';
+            let csv = 'Qty,Description,U/M,Your Cost,Markup %,Customer Price\n';
+
+            rows.forEach(row => {
+                const qty = row.querySelector('[data-field="qty"]').value;
+                const desc = row.querySelector('[data-field="desc"]').value.replace(/,/g, ' ');
+                const uom = row.querySelector('[data-field="uom"]').value;
+                const cost = row.querySelector('[data-field="cost"]').value;
+                const markup = row.querySelector('[data-field="markup"]').value;
+                const custPrice = row.querySelector('[data-calc="custprice"]').textContent.replace('$', '');
+                csv += `${qty},"${desc}",${uom},${cost},${markup}%,${custPrice}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${jobName.replace(/[^a-zA-Z0-9]/g, '_')}_parts.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('CSV downloaded!');
+        }
+
+        // Clear
+        function clearAll() {
+            selectedFiles = [];
+            extractedData = null;
+            renderThumbnails();
+            document.getElementById('resultsCard').style.display = 'none';
+            document.getElementById('scanBtn').disabled = true;
+            document.getElementById('fileInput').value = '';
+        }
+
+        // Settings
+        function openSettings() {
+            const key = localStorage.getItem('apiKey') || '';
+            document.getElementById('apiKeyInput').value = key;
+            document.getElementById('settingsModal').classList.add('active');
+        }
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.remove('active');
+        }
+        function saveSettings() {
+            const key = document.getElementById('apiKeyInput').value.trim();
+            const markup = document.getElementById('settingsMarkup').value;
+
+            if (key) {
+                localStorage.setItem('apiKey', key);
+                // Also save to server for persistence
+                fetch('/save-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: key })
+                });
+            }
+            if (markup) {
+                localStorage.setItem('defaultMarkup', markup);
+                document.getElementById('defaultMarkup').value = markup;
+            }
+            closeSettings();
+            showToast('Settings saved!');
+        }
+
+        // Utils
+        function showToast(msg, color) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.style.background = color || '#27ae60';
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/"/g, '&quot;');
+        }
+
+        // Auto-open settings if no API key
+        {% if not has_api_key %}
+        if (!localStorage.getItem('apiKey')) {
+            setTimeout(openSettings, 500);
+        }
+        {% endif %}
+    </script>
+</body>
+</html>
