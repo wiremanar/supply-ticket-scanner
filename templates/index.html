@@ -311,6 +311,49 @@
         }
         .delete-row:hover { color: #e74c3c; }
 
+        /* Quick Copy Items */
+        .qc-item {
+            display: grid;
+            grid-template-columns: 40px 1fr auto auto;
+            gap: 8px;
+            align-items: center;
+            padding: 10px 12px;
+            margin-bottom: 4px;
+            background: white;
+            border: 1px solid #d0d5dd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-size: 14px;
+        }
+        .qc-item:hover { border-color: #2d5a8e; background: #f0f4ff; }
+        .qc-item.copied {
+            background: #e8f5e9;
+            border-color: #27ae60;
+            opacity: 0.7;
+        }
+        .qc-item .qc-num {
+            font-weight: 700;
+            color: #2d5a8e;
+            font-size: 16px;
+            text-align: center;
+        }
+        .qc-item.copied .qc-num { color: #27ae60; }
+        .qc-item .qc-desc { font-weight: 500; }
+        .qc-item .qc-detail { color: #666; font-size: 13px; }
+        .qc-item .qc-price { font-weight: 700; color: #1e3a5f; font-size: 15px; white-space: nowrap; }
+        .qc-item .qc-qty { color: #666; white-space: nowrap; }
+        .qc-copied-badge {
+            display: none;
+            background: #27ae60;
+            color: white;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        .qc-item.copied .qc-copied-badge { display: inline-block; }
+
         /* Responsive */
         @media (max-width: 600px) {
             body { padding: 8px; }
@@ -402,9 +445,17 @@
             <div id="errorMessages"></div>
 
             <div class="action-bar">
-                <button class="btn btn-success" onclick="copyForJoist()">Copy for Joist</button>
+                <button class="btn btn-success" onclick="copyForJoist()">Copy All for Joist</button>
                 <button class="btn btn-outline" onclick="downloadCSV()">Download CSV</button>
-                <button class="btn btn-outline" onclick="clearAll()">Clear & Start Over</button>
+                <button class="btn btn-outline" onclick="clearAll()">Clear &amp; Start Over</button>
+            </div>
+
+            <!-- Quick Copy Panel - one item at a time for Joist entry -->
+            <div id="quickCopyPanel" style="display:none; margin-top:16px; padding:16px; background:#f0f8e8; border:2px solid #27ae60; border-radius:12px;">
+                <h3 style="margin-bottom:8px; color:#1e3a5f;">Quick Entry Mode — Click to copy each item, then paste into Joist</h3>
+                <p style="font-size:13px; color:#666; margin-bottom:12px;">Click a row to copy that item's info. Green = already copied.</p>
+                <div id="quickCopyList"></div>
+                <p id="quickCopyProgress" style="margin-top:12px; font-weight:600; color:#27ae60;"></p>
             </div>
         </div>
     </div>
@@ -643,8 +694,9 @@
             }
         }
 
-        // Copy for Joist
+        // Copy All for Joist
         function copyForJoist() {
+            // Build the quick copy panel AND copy the full summary
             const rows = document.querySelectorAll('#resultsBody tr');
             const jobName = document.getElementById('jobName').value || 'Unassigned';
             let text = `Job: ${jobName}\n`;
@@ -653,6 +705,7 @@
             rows.forEach(row => {
                 const qty = row.querySelector('[data-field="qty"]').value;
                 const desc = row.querySelector('[data-field="desc"]').value;
+                const cost = row.querySelector('[data-field="cost"]').value;
                 const custPriceText = row.querySelector('[data-calc="custprice"]').textContent;
                 text += `${qty}x  ${desc}  —  ${custPriceText}\n`;
             });
@@ -662,17 +715,79 @@
             text += `TOTAL: ${totalText}\n`;
 
             navigator.clipboard.writeText(text).then(() => {
-                showToast('Copied to clipboard! Paste into Joist.');
+                showToast('Full list copied! Use Quick Entry below for one-at-a-time.');
             }).catch(() => {
-                // Fallback
                 const ta = document.createElement('textarea');
                 ta.value = text;
                 document.body.appendChild(ta);
                 ta.select();
                 document.execCommand('copy');
                 document.body.removeChild(ta);
-                showToast('Copied to clipboard!');
+                showToast('Full list copied!');
             });
+
+            // Build Quick Copy panel
+            buildQuickCopyPanel();
+        }
+
+        let copiedCount = 0;
+
+        function buildQuickCopyPanel() {
+            const rows = document.querySelectorAll('#resultsBody tr');
+            const panel = document.getElementById('quickCopyPanel');
+            const list = document.getElementById('quickCopyList');
+            list.innerHTML = '';
+            copiedCount = 0;
+
+            rows.forEach((row, idx) => {
+                const qty = row.querySelector('[data-field="qty"]').value;
+                const desc = row.querySelector('[data-field="desc"]').value;
+                const markup = row.querySelector('[data-field="markup"]').value;
+                const custPrice = row.querySelector('[data-calc="custprice"]').textContent;
+                const lineTotal = row.querySelector('[data-calc="linetotal"]').textContent;
+
+                const item = document.createElement('div');
+                item.className = 'qc-item';
+                item.setAttribute('data-idx', idx);
+                item.innerHTML = `
+                    <div class="qc-num">${idx + 1}</div>
+                    <div>
+                        <div class="qc-desc">${escapeHtml(desc)}</div>
+                        <div class="qc-detail">Qty: ${qty} | Rate: ${custPrice} | Markup: ${markup}%</div>
+                    </div>
+                    <div class="qc-price">${lineTotal}</div>
+                    <div><span class="qc-copied-badge">Copied</span></div>
+                `;
+                item.onclick = () => copyOneItem(item, desc, custPrice, qty);
+                list.appendChild(item);
+            });
+
+            updateQuickCopyProgress(rows.length);
+            panel.style.display = 'block';
+            panel.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function copyOneItem(el, desc, rate, qty) {
+            // Copy just this item's description — paste into Joist's Description field
+            const text = desc;
+            navigator.clipboard.writeText(text).then(() => {
+                if (!el.classList.contains('copied')) {
+                    copiedCount++;
+                }
+                el.classList.add('copied');
+                const total = document.querySelectorAll('.qc-item').length;
+                updateQuickCopyProgress(total);
+                showToast(`Copied: "${desc.substring(0, 40)}..." — Qty: ${qty}, Rate: ${rate}`);
+            });
+        }
+
+        function updateQuickCopyProgress(total) {
+            const prog = document.getElementById('quickCopyProgress');
+            if (copiedCount >= total) {
+                prog.textContent = `All ${total} items copied into Joist!`;
+            } else {
+                prog.textContent = `${copiedCount} of ${total} items entered`;
+            }
         }
 
         // Download CSV
