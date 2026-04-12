@@ -206,11 +206,117 @@ def save_key():
         return jsonify({'error': 'No key provided'}), 400
 
     env_path = os.path.join(os.path.dirname(__file__), '.env')
+
+    # Read existing env to preserve other keys
+    existing = {}
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                if '=' in line:
+                    k, v = line.strip().split('=', 1)
+                    existing[k] = v
+
+    existing['ANTHROPIC_API_KEY'] = api_key
+
     with open(env_path, 'w') as f:
-        f.write(f'ANTHROPIC_API_KEY={api_key}\n')
+        for k, v in existing.items():
+            f.write(f'{k}={v}\n')
 
     os.environ['ANTHROPIC_API_KEY'] = api_key
     return jsonify({'success': True})
+
+
+@app.route('/save-ninja-settings', methods=['POST'])
+def save_ninja_settings():
+    """Save Invoice Ninja settings."""
+    data = request.get_json()
+    ninja_url = data.get('ninja_url', '').strip()
+    ninja_token = data.get('ninja_token', '').strip()
+
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    existing = {}
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                if '=' in line:
+                    k, v = line.strip().split('=', 1)
+                    existing[k] = v
+
+    if ninja_url:
+        existing['NINJA_URL'] = ninja_url
+    if ninja_token:
+        existing['NINJA_TOKEN'] = ninja_token
+
+    with open(env_path, 'w') as f:
+        for k, v in existing.items():
+            f.write(f'{k}={v}\n')
+
+    return jsonify({'success': True})
+
+
+@app.route('/create-invoice', methods=['POST'])
+def create_invoice():
+    """Create a draft invoice in Invoice Ninja with extracted line items."""
+    import requests as http_requests
+
+    data = request.get_json()
+    ninja_url = data.get('ninja_url') or os.environ.get('NINJA_URL', 'http://localhost:8080')
+    ninja_token = data.get('ninja_token') or os.environ.get('NINJA_TOKEN', '')
+
+    if not ninja_token:
+        return jsonify({'error': 'No Invoice Ninja API token configured. Add it in Settings.'}), 400
+
+    line_items = data.get('line_items', [])
+    job_name = data.get('job_name', 'Untitled Job')
+    customer_name = data.get('customer_name', '')
+
+    # Build Invoice Ninja line items
+    ninja_items = []
+    for item in line_items:
+        ninja_items.append({
+            'product_key': '',
+            'notes': item.get('description', ''),
+            'quantity': float(item.get('qty', 1)),
+            'cost': float(item.get('customer_price', 0)),
+        })
+
+    # Create the invoice
+    headers = {
+        'X-Api-Token': ninja_token,
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+    }
+
+    invoice_data = {
+        'line_items': ninja_items,
+        'public_notes': f'Job: {job_name}',
+        'private_notes': f'Source: Supply ticket scanner\nCustomer: {customer_name}',
+        'status_id': '1',  # Draft
+    }
+
+    try:
+        resp = http_requests.post(
+            f'{ninja_url}/api/v1/invoices',
+            json=invoice_data,
+            headers=headers,
+            timeout=15
+        )
+
+        if resp.status_code in [200, 201]:
+            result = resp.json()
+            invoice = result.get('data', {})
+            return jsonify({
+                'success': True,
+                'invoice_id': invoice.get('id'),
+                'invoice_number': invoice.get('number'),
+                'total': invoice.get('amount'),
+                'url': f'{ninja_url}/invoices/{invoice.get("id")}/edit'
+            })
+        else:
+            return jsonify({'error': f'Invoice Ninja error ({resp.status_code}): {resp.text[:300]}'}), resp.status_code
+
+    except Exception as e:
+        return jsonify({'error': f'Could not connect to Invoice Ninja: {str(e)}'}), 500
 
 
 if __name__ == '__main__':

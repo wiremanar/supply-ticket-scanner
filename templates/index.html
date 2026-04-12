@@ -445,9 +445,17 @@
             <div id="errorMessages"></div>
 
             <div class="action-bar">
+                <button class="btn btn-primary" onclick="sendToNinja()" id="ninjaBtn" style="background:#e67e22;">
+                    Send to Invoice Ninja
+                </button>
                 <button class="btn btn-success" onclick="copyForJoist()">Copy All for Joist</button>
                 <button class="btn btn-outline" onclick="downloadCSV()">Download CSV</button>
                 <button class="btn btn-outline" onclick="clearAll()">Clear &amp; Start Over</button>
+            </div>
+            <div id="ninjaResult" style="display:none; margin-top:12px; padding:14px; background:#e8f5e9; border:2px solid #27ae60; border-radius:8px;">
+                <strong style="color:#27ae60;">Invoice Created!</strong>
+                <span id="ninjaInvoiceInfo"></span>
+                <a id="ninjaInvoiceLink" href="#" target="_blank" style="margin-left:12px; color:#2d5a8e; font-weight:600;">Open in Invoice Ninja</a>
             </div>
 
             <!-- Quick Copy Panel - one item at a time for Joist entry -->
@@ -475,6 +483,16 @@
             <div class="field">
                 <label>Default Markup %</label>
                 <input type="number" id="settingsMarkup" value="25" min="0" max="200">
+            </div>
+            <hr style="margin:16px 0; border:none; border-top:1px solid #e0e0e0;">
+            <h3 style="font-size:14px; color:#e67e22; margin-bottom:10px;">Invoice Ninja (Auto-Import)</h3>
+            <div class="field">
+                <label>Invoice Ninja URL</label>
+                <input type="text" id="ninjaUrlInput" placeholder="http://localhost:8080">
+            </div>
+            <div class="field">
+                <label>Invoice Ninja API Token</label>
+                <input type="password" id="ninjaTokenInput" placeholder="Your API token">
             </div>
             <div class="modal-actions">
                 <button class="btn btn-outline" onclick="closeSettings()">Cancel</button>
@@ -831,6 +849,8 @@
         function openSettings() {
             const key = localStorage.getItem('apiKey') || '';
             document.getElementById('apiKeyInput').value = key;
+            document.getElementById('ninjaUrlInput').value = localStorage.getItem('ninjaUrl') || 'http://localhost:8080';
+            document.getElementById('ninjaTokenInput').value = localStorage.getItem('ninjaToken') || '';
             document.getElementById('settingsModal').classList.add('active');
         }
         function closeSettings() {
@@ -839,10 +859,11 @@
         function saveSettings() {
             const key = document.getElementById('apiKeyInput').value.trim();
             const markup = document.getElementById('settingsMarkup').value;
+            const ninjaUrl = document.getElementById('ninjaUrlInput').value.trim();
+            const ninjaToken = document.getElementById('ninjaTokenInput').value.trim();
 
             if (key) {
                 localStorage.setItem('apiKey', key);
-                // Also save to server for persistence
                 fetch('/save-key', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -853,8 +874,88 @@
                 localStorage.setItem('defaultMarkup', markup);
                 document.getElementById('defaultMarkup').value = markup;
             }
+            if (ninjaUrl) localStorage.setItem('ninjaUrl', ninjaUrl);
+            if (ninjaToken) localStorage.setItem('ninjaToken', ninjaToken);
+
+            // Save ninja settings to server
+            if (ninjaUrl || ninjaToken) {
+                fetch('/save-ninja-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ninja_url: ninjaUrl, ninja_token: ninjaToken })
+                });
+            }
+
             closeSettings();
             showToast('Settings saved!');
+        }
+
+        // Send to Invoice Ninja
+        async function sendToNinja() {
+            const ninjaToken = localStorage.getItem('ninjaToken');
+            const ninjaUrl = localStorage.getItem('ninjaUrl') || 'http://localhost:8080';
+
+            if (!ninjaToken) {
+                openSettings();
+                showToast('Please enter your Invoice Ninja API token in Settings', '#e74c3c');
+                return;
+            }
+
+            const rows = document.querySelectorAll('#resultsBody tr');
+            if (rows.length === 0) {
+                showToast('No line items to send', '#e74c3c');
+                return;
+            }
+
+            const ninjaBtn = document.getElementById('ninjaBtn');
+            ninjaBtn.disabled = true;
+            ninjaBtn.textContent = 'Creating Invoice...';
+
+            const lineItems = [];
+            rows.forEach(row => {
+                const qty = row.querySelector('[data-field="qty"]').value;
+                const desc = row.querySelector('[data-field="desc"]').value;
+                const custPrice = row.querySelector('[data-calc="custprice"]').textContent.replace('$', '').replace(',', '');
+                lineItems.push({
+                    qty: parseFloat(qty) || 1,
+                    description: desc,
+                    customer_price: parseFloat(custPrice) || 0
+                });
+            });
+
+            const jobName = document.getElementById('jobName').value || 'Untitled Job';
+            const customerName = extractedData?.header?.customer || '';
+
+            try {
+                const resp = await fetch('/create-invoice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ninja_url: ninjaUrl,
+                        ninja_token: ninjaToken,
+                        line_items: lineItems,
+                        job_name: jobName,
+                        customer_name: customerName
+                    })
+                });
+
+                const result = await resp.json();
+
+                if (result.success) {
+                    document.getElementById('ninjaResult').style.display = 'block';
+                    document.getElementById('ninjaInvoiceInfo').textContent =
+                        ` Invoice #${result.invoice_number || 'N/A'} — $${parseFloat(result.total || 0).toFixed(2)}`;
+                    document.getElementById('ninjaInvoiceLink').href = result.url || '#';
+                    showToast('Invoice created in Invoice Ninja!');
+                } else {
+                    showToast(result.error || 'Failed to create invoice', '#e74c3c');
+                }
+            } catch (err) {
+                showToast('Error connecting to Invoice Ninja: ' + err.message, '#e74c3c');
+            }
+
+            ninjaBtn.disabled = false;
+            ninjaBtn.textContent = 'Send to Invoice Ninja';
         }
 
         // Utils
