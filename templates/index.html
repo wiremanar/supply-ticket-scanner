@@ -498,70 +498,6 @@
             document.getElementById('settingsMarkup').value = savedMarkup;
         }
 
-        // Load client list from Invoice Ninja
-        async function loadClients() {
-            try {
-                const resp = await fetch('/get-clients');
-                const data = await resp.json();
-                if (data.clients) {
-                    const select = document.getElementById('clientSelect');
-                    const currentVal = select.value;
-                    select.innerHTML = '<option value="">-- Select Client --</option><option value="__new__">+ Add New Client</option>';
-                    data.clients.forEach(c => {
-                        const opt = document.createElement('option');
-                        opt.value = c.id;
-                        opt.textContent = c.name + (c.city ? ` (${c.city})` : '');
-                        select.appendChild(opt);
-                    });
-                    // Restore selection if it still exists
-                    if (currentVal) select.value = currentVal;
-                    showToast('Client list refreshed!');
-                }
-            } catch (e) {
-                console.log('Could not load clients:', e);
-            }
-        }
-        loadClients();
-
-        // Handle "Add New Client" selection
-        document.getElementById('clientSelect').addEventListener('change', async function() {
-            if (this.value === '__new__') {
-                const name = prompt('Enter new client name:');
-                if (!name || !name.trim()) {
-                    this.value = '';
-                    return;
-                }
-
-                const ninjaToken = localStorage.getItem('ninjaToken');
-                const ninjaUrl = localStorage.getItem('ninjaUrl') || 'http://localhost:8080';
-
-                try {
-                    const resp = await fetch('/create-client', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            ninja_url: ninjaUrl,
-                            ninja_token: ninjaToken,
-                            name: name.trim()
-                        })
-                    });
-                    const result = await resp.json();
-                    if (result.success) {
-                        // Reload client list and select the new one
-                        await loadClients();
-                        this.value = result.client_id;
-                        showToast(`Client "${name.trim()}" created!`);
-                    } else {
-                        showToast(result.error || 'Failed to create client', '#e74c3c');
-                        this.value = '';
-                    }
-                } catch (e) {
-                    showToast('Error creating client: ' + e.message, '#e74c3c');
-                    this.value = '';
-                }
-            }
-        });
-
         // File handling
         const uploadZone = document.getElementById('uploadZone');
         const fileInput = document.getElementById('fileInput');
@@ -895,8 +831,6 @@
         function openSettings() {
             const key = localStorage.getItem('apiKey') || '';
             document.getElementById('apiKeyInput').value = key;
-            document.getElementById('ninjaUrlInput').value = localStorage.getItem('ninjaUrl') || 'http://localhost:8080';
-            document.getElementById('ninjaTokenInput').value = localStorage.getItem('ninjaToken') || '';
             document.getElementById('settingsModal').classList.add('active');
         }
         function closeSettings() {
@@ -905,8 +839,6 @@
         function saveSettings() {
             const key = document.getElementById('apiKeyInput').value.trim();
             const markup = document.getElementById('settingsMarkup').value;
-            const ninjaUrl = document.getElementById('ninjaUrlInput').value.trim();
-            const ninjaToken = document.getElementById('ninjaTokenInput').value.trim();
 
             if (key) {
                 localStorage.setItem('apiKey', key);
@@ -920,98 +852,9 @@
                 localStorage.setItem('defaultMarkup', markup);
                 document.getElementById('defaultMarkup').value = markup;
             }
-            if (ninjaUrl) localStorage.setItem('ninjaUrl', ninjaUrl);
-            if (ninjaToken) localStorage.setItem('ninjaToken', ninjaToken);
-
-            // Save ninja settings to server
-            if (ninjaUrl || ninjaToken) {
-                fetch('/save-ninja-settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ninja_url: ninjaUrl, ninja_token: ninjaToken })
-                });
-            }
 
             closeSettings();
             showToast('Settings saved!');
-        }
-
-        // Send to Invoice Ninja
-        async function sendToNinja() {
-            const ninjaToken = localStorage.getItem('ninjaToken');
-            const ninjaUrl = localStorage.getItem('ninjaUrl') || 'http://localhost:8080';
-
-            if (!ninjaToken) {
-                openSettings();
-                showToast('Please enter your Invoice Ninja API token in Settings', '#e74c3c');
-                return;
-            }
-
-            const rows = document.querySelectorAll('#resultsBody tr');
-            if (rows.length === 0) {
-                showToast('No line items to send', '#e74c3c');
-                return;
-            }
-
-            const ninjaBtn = document.getElementById('ninjaBtn');
-            ninjaBtn.disabled = true;
-            ninjaBtn.textContent = 'Creating Invoice...';
-
-            const lineItems = [];
-            rows.forEach(row => {
-                const qty = parseFloat(row.querySelector('[data-field="qty"]').value) || 1;
-                const desc = row.querySelector('[data-field="desc"]').value;
-                const lineCost = parseFloat(row.querySelector('[data-field="cost"]').value) || 0;
-                const markup = parseFloat(row.querySelector('[data-field="markup"]').value) || 0;
-                lineItems.push({
-                    qty: qty,
-                    description: desc,
-                    line_cost: lineCost,
-                    markup: markup
-                });
-            });
-
-            const jobName = document.getElementById('jobName').value || 'Untitled Job';
-            const clientId = document.getElementById('clientSelect').value;
-
-            if (!clientId) {
-                showToast('Please select a client from the dropdown first', '#e74c3c');
-                ninjaBtn.disabled = false;
-                ninjaBtn.textContent = 'Send to Invoice Ninja';
-                return;
-            }
-
-            try {
-                const resp = await fetch('/create-invoice', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ninja_url: ninjaUrl,
-                        ninja_token: ninjaToken,
-                        line_items: lineItems,
-                        job_name: jobName,
-                        client_id: clientId,
-                        apply_tax: document.getElementById('applyTax').value === 'yes'
-                    })
-                });
-
-                const result = await resp.json();
-
-                if (result.success) {
-                    document.getElementById('ninjaResult').style.display = 'block';
-                    document.getElementById('ninjaInvoiceInfo').textContent =
-                        ` Invoice #${result.invoice_number || 'N/A'} — $${parseFloat(result.total || 0).toFixed(2)}`;
-                    document.getElementById('ninjaInvoiceLink').href = result.url || '#';
-                    showToast('Invoice created in Invoice Ninja!');
-                } else {
-                    showToast(result.error || 'Failed to create invoice', '#e74c3c');
-                }
-            } catch (err) {
-                showToast('Error connecting to Invoice Ninja: ' + err.message, '#e74c3c');
-            }
-
-            ninjaBtn.disabled = false;
-            ninjaBtn.textContent = 'Send to Invoice Ninja';
         }
 
         // Utils
