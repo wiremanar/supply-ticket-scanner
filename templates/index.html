@@ -342,9 +342,9 @@
                     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
                 </svg>
                 <p>Tap to upload or take photos of your ticket</p>
-                <p class="hint">Supports multiple pages — upload all pages at once</p>
+                <p class="hint">Supports photos, PDFs, and multiple pages — upload all at once</p>
             </div>
-            <input type="file" id="fileInput" accept="image/*" multiple capture="environment">
+            <input type="file" id="fileInput" accept="image/*,.pdf,application/pdf" multiple capture="environment">
             <div class="thumbnails" id="thumbnails"></div>
         </div>
 
@@ -469,7 +469,7 @@
 
         function addFiles(files) {
             for (const file of files) {
-                if (file.type.startsWith('image/')) {
+                if (file.type.startsWith('image/') || file.type === 'application/pdf') {
                     selectedFiles.push(file);
                 }
             }
@@ -484,7 +484,11 @@
                 const wrapper = document.createElement('div');
                 wrapper.className = 'thumb-wrapper';
                 const img = document.createElement('img');
-                img.src = URL.createObjectURL(file);
+                if (file.type === 'application/pdf') {
+                    img.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100" viewBox="0 0 80 100"><rect width="80" height="100" rx="4" fill="%23e8eaed"/><text x="40" y="55" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="bold" fill="%23c0392b">PDF</text><text x="40" y="72" text-anchor="middle" font-family="sans-serif" font-size="8" fill="%23666">' + file.name.substring(0,10) + '</text></svg>');
+                } else {
+                    img.src = URL.createObjectURL(file);
+                }
                 const btn = document.createElement('button');
                 btn.className = 'thumb-remove';
                 btn.textContent = 'x';

@@ -1,9 +1,11 @@
 import os
 import json
 import base64
+import io
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 import anthropic
+import fitz  # PyMuPDF - for PDF support
 
 load_dotenv()
 
@@ -85,7 +87,7 @@ def extract():
 
     files = request.files.getlist('images')
     if not files:
-        return jsonify({'error': 'No images uploaded'}), 400
+        return jsonify({'error': 'No files uploaded'}), 400
 
     client = anthropic.Anthropic(api_key=api_key)
 
@@ -94,12 +96,31 @@ def extract():
     totals_info = {}
     errors = []
 
-    for i, file in enumerate(files):
-        try:
-            image_data = base64.standard_b64encode(file.read()).decode('utf-8')
+    # Build a list of (image_bytes, media_type, label) for all pages
+    pages_to_process = []
 
-            # Detect media type
-            filename = file.filename.lower()
+    for file in files:
+        filename = file.filename.lower()
+        file_bytes = file.read()
+
+        if filename.endswith('.pdf'):
+            # Convert each PDF page to a PNG image
+            try:
+                pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
+                for page_num in range(len(pdf_doc)):
+                    page = pdf_doc[page_num]
+                    # Render at 2x resolution for better OCR accuracy
+                    mat = fitz.Matrix(2, 2)
+                    pix = page.get_pixmap(matrix=mat)
+                    img_bytes = pix.tobytes("png")
+                    img_b64 = base64.standard_b64encode(img_bytes).decode('utf-8')
+                    pages_to_process.append((img_b64, 'image/png', f"{file.filename} page {page_num + 1}"))
+                pdf_doc.close()
+            except Exception as e:
+                errors.append(f"PDF error ({file.filename}): {str(e)}")
+        else:
+            # Regular image file
+            img_b64 = base64.standard_b64encode(file_bytes).decode('utf-8')
             if filename.endswith('.png'):
                 media_type = 'image/png'
             elif filename.endswith('.gif'):
@@ -108,7 +129,10 @@ def extract():
                 media_type = 'image/webp'
             else:
                 media_type = 'image/jpeg'
+            pages_to_process.append((img_b64, media_type, f"{file.filename}"))
 
+    for i, (image_data, media_type, label) in enumerate(pages_to_process):
+        try:
             message = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=4096,
@@ -156,17 +180,17 @@ def extract():
                 totals_info = data['totals']
 
         except json.JSONDecodeError as e:
-            errors.append(f"Page {i+1}: Could not parse response as JSON - {str(e)}")
+            errors.append(f"{label}: Could not parse response as JSON - {str(e)}")
         except anthropic.APIError as e:
-            errors.append(f"Page {i+1}: API error - {str(e)}")
+            errors.append(f"{label}: API error - {str(e)}")
         except Exception as e:
-            errors.append(f"Page {i+1}: {str(e)}")
+            errors.append(f"{label}: {str(e)}")
 
     result = {
         'header': header_info,
         'line_items': all_items,
         'totals': totals_info,
-        'pages_processed': len(files),
+        'pages_processed': len(pages_to_process),
         'errors': errors
     }
 
