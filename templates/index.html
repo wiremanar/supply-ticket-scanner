@@ -743,7 +743,7 @@
             // Header matching Joist fields
             const headerEl = document.createElement('div');
             headerEl.style.cssText = 'display:grid; grid-template-columns:35px 1fr 100px 70px 60px 50px 35px; gap:6px; padding:6px 12px; font-size:12px; font-weight:700; color:#666; border-bottom:2px solid #ccc; margin-bottom:4px;';
-            headerEl.innerHTML = '<div>#</div><div>Description</div><div>Your Cost</div><div>Markup</div><div>Qty</div><div>Tax</div><div></div>';
+            headerEl.innerHTML = '<div>#</div><div>Description</div><div>Price Each</div><div>Markup</div><div>Qty</div><div>Tax</div><div></div>';
             list.appendChild(headerEl);
 
             rows.forEach((row, idx) => {
@@ -753,23 +753,29 @@
                 const markup = row.querySelector('[data-field="markup"]').value;
                 const uom = row.querySelector('[data-field="uom"]').value;
 
-                // Calculate per-unit cost for Joist (cost field is line total)
-                const perUnit = (parseFloat(cost) / (parseFloat(qty) || 1)).toFixed(2);
+                // Calculate true price per each/foot
+                // cost = line total from supply house
+                // qty = actual quantity (feet, pieces, etc)
+                const qtyNum = parseFloat(qty) || 1;
+                const costNum = parseFloat(cost) || 0;
+                const priceEach = (costNum / qtyNum).toFixed(4);
+                // Clean up trailing zeros but keep at least 2 decimals
+                const priceDisplay = parseFloat(priceEach).toFixed(Math.max(2, (priceEach.split('.')[1] || '').replace(/0+$/, '').length));
 
                 const item = document.createElement('div');
                 item.className = 'qc-item';
-                item.style.cssText = 'grid-template-columns:35px 1fr 100px 70px 60px 50px 35px; font-size:13px;';
+                item.style.cssText = 'grid-template-columns:35px 1fr 110px 70px 70px 50px 35px; font-size:13px;';
                 item.setAttribute('data-idx', idx);
                 item.innerHTML = `
                     <div class="qc-num">${idx + 1}</div>
                     <div class="qc-desc" style="font-size:13px;">${escapeHtml(desc)}</div>
-                    <div style="font-weight:700; color:#2d5a8e;">$${perUnit}</div>
+                    <div style="font-weight:700; color:#2d5a8e;">$${priceDisplay}/ea</div>
                     <div style="text-align:center;">${markup}%</div>
                     <div style="text-align:center;">${qty}</div>
                     <div style="text-align:center;">Y</div>
                     <div><span class="qc-copied-badge">Done</span></div>
                 `;
-                item.onclick = () => copyOneItem(item, desc, perUnit, qty, markup);
+                item.onclick = () => copyOneItem(item, desc, priceDisplay, qty, markup);
                 list.appendChild(item);
             });
 
