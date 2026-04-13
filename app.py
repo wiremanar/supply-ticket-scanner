@@ -48,14 +48,22 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
       "description": "BLI B2211-1-1/4PAZN 1-1/4 EMT/RIG STRUT STRAP",
       "unit_of_measure": "EA",
       "unit_price": 2.0964,
-      "amount": 209.64
+      "amount": 209.64,
+      "package_size": 1,
+      "package_unit": "EA",
+      "num_packages": 100,
+      "cost_per_package": 2.0964
     },
     {
       "qty": 1000,
       "description": "WIR 14 THHN STR BLK @ 500 14GA STR-BLACK @ 500 FT SPOOL",
       "unit_of_measure": "M",
       "unit_price": 106.4000,
-      "amount": 106.40
+      "amount": 106.40,
+      "package_size": 500,
+      "package_unit": "500 FT SPOOL",
+      "num_packages": 2,
+      "cost_per_package": 53.20
     }
   ],
   "totals": {
@@ -64,6 +72,35 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
     "total": 0
   }
 }
+
+PACKAGING AND UNIT CONVERSION RULES:
+The supply house uses 3 units of measure:
+- EA = price per each (1 unit)
+- C = price per 100
+- M = price per 1000
+
+You MUST figure out how the item is actually sold/packaged and calculate:
+- "package_size": how many units per package (look for "@ 500", "@ 1000", "@ 2500" in description, or if EA then 1)
+- "package_unit": what one package is called (e.g., "500 FT SPOOL", "1000 FT REEL", "EA", "BOX OF 100")
+- "num_packages": total qty divided by package_size = how many packages were bought
+- "cost_per_package": amount divided by num_packages = cost of one package
+
+Examples:
+- "WIR 14 THHN STR BLK @ 500" with qty=1000, amount=106.40
+  → package_size=500, num_packages=2, cost_per_package=53.20 (each 500ft spool costs $53.20)
+- "WIR 1 THHN STR @ 1000" with qty=3000, amount=6776.41
+  → package_size=1000, num_packages=3, cost_per_package=2258.80 (each 1000ft reel costs $2258.80)
+- "CON ALU 3/4" (conduit) with qty=1050, amount=1465.65, U/M=C
+  → package_size=1 (sold per stick/each), num_packages=1050, cost_per_package=1.3958
+- "BLI B2211" with qty=100, U/M=EA, amount=209.64
+  → package_size=1, num_packages=100, cost_per_package=2.0964
+- If no "@ XXX" in description and U/M is M: this means wire sold by the foot, priced per 1000ft.
+  → package_size=1, package_unit="FT", num_packages=qty (the actual footage), cost_per_package=amount/qty (price per foot)
+  Example: 674 ft of wire, U/M=M, unit_price=928.3078, amount=625.48
+  → package_size=1, package_unit="FT", num_packages=674, cost_per_package=0.9283 (per foot)
+- If no "@ XXX" in description and U/M is C: sold per piece, priced per 100.
+  → package_size=1, package_unit="EA", num_packages=qty, cost_per_package=amount/qty (price per piece)
+- If U/M is EA: package_size=1, package_unit="EA", num_packages=qty, cost_per_package=amount/qty
 
 Additional rules:
 - Include ALL line items — do not skip any
@@ -350,6 +387,7 @@ def create_invoice():
     line_items = data.get('line_items', [])
     job_name = data.get('job_name', 'Untitled Job')
     client_id = data.get('client_id', '')
+    apply_tax = data.get('apply_tax', True)
 
     if not client_id:
         return jsonify({'error': 'Please select a client from the dropdown before sending.'}), 400
@@ -365,12 +403,16 @@ def create_invoice():
         item_name = desc.split('@')[0].split('14GA')[0].split('12GA')[0].strip()
         if len(item_name) > 40:
             item_name = item_name[:40].strip()
-        ninja_items.append({
+        item_data = {
             'product_key': item_name,
             'notes': f"Qty: {int(qty)} - {desc}",
             'quantity': 1,
             'cost': round(marked_up_total, 2),
-        })
+        }
+        if apply_tax:
+            item_data['tax_name1'] = 'Arkansas State Tax'
+            item_data['tax_rate1'] = 9
+        ninja_items.append(item_data)
 
     # API headers
     headers = {
