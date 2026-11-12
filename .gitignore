@@ -4,3 +4,10 @@ __pycache__/
 .flask_session/
 Service_Billing_Tracker.xlsx
 build_tracker.py
+
+# trading_bot
+trading_bot/config.yaml
+trading_bot_state.json
+*trading_bot_state*.json
+.venv/
+venv/

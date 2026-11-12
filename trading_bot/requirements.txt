@@ -1,0 +1,9 @@
+# Core (paper mode + backtest work with just these)
+anthropic>=0.40
+pyyaml>=6.0
+yfinance>=0.2
+pandas>=2.0
+
+# Live Robinhood execution only (optional, unofficial API — against Robinhood ToS)
+robin_stocks>=3.0
+pyotp>=2.9

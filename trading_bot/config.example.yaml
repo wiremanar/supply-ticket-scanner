@@ -1,0 +1,39 @@
+# Copy to config.yaml and edit. Secrets (Robinhood creds, Anthropic key) go in
+# environment variables, NOT here.
+
+mode: paper                 # paper | live   (live places REAL orders)
+universe: [AAPL, MSFT, SPY, NVDA, GOOGL]
+poll_interval_sec: 300      # seconds between cycles in `run`
+paper_starting_cash: 10000
+trade_during_market_hours_only: true
+state_path: trading_bot_state.json
+
+risk:
+  max_position_pct: 0.20            # <=20% of equity in any one name
+  max_portfolio_invested_pct: 0.95  # keep >=5% uninvested overall
+  min_cash_reserve_pct: 0.05
+  max_order_notional: 2000          # dollars per order; null to disable
+  daily_loss_limit_pct: 0.03        # halt for the day after a 3% drawdown
+  max_trades_per_day: 20
+  min_equity_floor: 100
+  allow_shorting: false
+
+strategy:
+  sma_short: 20
+  sma_long: 50
+  rsi_period: 14
+  momentum_period: 20
+  rsi_oversold: 30
+  rsi_overbought: 70
+  weight_sma: 0.4
+  weight_rsi: 0.3
+  weight_momentum: 0.3
+  buy_threshold: 0.3
+  sell_threshold: -0.3
+
+llm:
+  enabled: true
+  model: claude-sonnet-5-5   # set to a model your ANTHROPIC_API_KEY can access
+  max_tokens: 1500
+  temperature: 0.2
+  fallback_to_rules: true    # if the model errors, use rule signals only
